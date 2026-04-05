@@ -1,127 +1,133 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Hand-Pen</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <meta charset="UTF-8">
+  <title>Hand Pen AI</title>
   <style>
-    body { margin: 0; background: #050301; overflow: hidden; }
-    video { display: none; }
-    canvas { width: 100%; height: 100%; transform: scaleX(-1); position: absolute; z-index: 1; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    video, canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+    #canvas {
+      z-index: 2;
+    }
+    #video {
+      transform: scaleX(-1);
+    }
   </style>
 </head>
+
 <body>
-  <video id="vid"></video>
-  <canvas id="c"></canvas>
-  <script>
-    var vid = document.getElementById('vid');
-    var c = document.getElementById('c');
-    var ctx = c.getContext('2d');
-    var arr = [];
-    var cur = [];
-    var shift = false;
-    var draw = false;
-    var sx = null;
-    var sy = null;
 
-    window.onkeydown = function(e) {
-      if (e.key == 'Shift') shift = true;
-      if (e.code == 'Space') arr = [];
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let prevX = 0, prevY = 0;
+
+// Finger count function
+function countFingers(landmarks) {
+    let fingers = [];
+
+    // Thumb
+    if (landmarks[4].x < landmarks[3].x) fingers.push(1);
+    else fingers.push(0);
+
+    // Other fingers
+    for (let i = 8; i <= 20; i += 4) {
+        if (landmarks[i].y < landmarks[i - 2].y) fingers.push(1);
+        else fingers.push(0);
     }
-    
-    window.onkeyup = function(e) {
-      if (e.key == 'Shift') shift = false;
-    }
 
-    function run(res) {
-      c.width = window.innerWidth;
-      c.height = window.innerHeight;
-      ctx.drawImage(res.image, 0, 0, c.width, c.height);
-      ctx.fillStyle = 'rgba(10, 6, 2, 0.85)';
-      ctx.fillRect(0, 0, c.width, c.height);
+    return fingers.reduce((a, b) => a + b, 0);
+}
 
-      ctx.shadowColor = '#F5D061';
-      ctx.shadowBlur = 15;
-      ctx.strokeStyle = '#F5D061';
-      ctx.lineWidth = 6;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+// Gesture handler
+function handleGesture(fingerCount, x, y) {
 
-      for (var i = 0; i < arr.length; i++) {
+    if (fingerCount === 1) {
+        // Draw
+        ctx.strokeStyle = "lime";
+        ctx.lineWidth = 5;
         ctx.beginPath();
-        for (var j = 0; j < arr[i].length; j++) {
-          if (j == 0) ctx.moveTo(arr[i][j].x, arr[i][j].y);
-          else ctx.lineTo(arr[i][j].x, arr[i][j].y);
-        }
+        ctx.moveTo(prevX, prevY);
+        ctx.lineTo(x, y);
         ctx.stroke();
-      }
-
-      if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-        var lm = res.multiHandLandmarks[0];
-        drawConnectors(ctx, lm, HAND_CONNECTIONS, {color: 'rgba(245, 208, 97, 0.3)', lineWidth: 2});
-        drawLandmarks(ctx, lm, {color: '#FFFFFF', lineWidth: 1, radius: 2});
-
-        var ind = lm[8];
-        var rx = ind.x * c.width;
-        var ry = ind.y * c.height;
-
-        if (sx == null) {
-          sx = rx; 
-          sy = ry;
-        } else {
-          sx += (rx - sx) * 0.45;
-          sy += (ry - sy) * 0.45;
-        }
-
-        ctx.beginPath();
-        ctx.arc(sx, sy, 6, 0, 2 * Math.PI);
-        if (shift) { 
-          ctx.fillStyle = '#FFFFFF'; 
-        } else { 
-          ctx.fillStyle = 'rgba(245, 208, 97, 0.4)'; 
-        }
-        ctx.fill();
-
-        if (shift) {
-          if (!draw) {
-            draw = true;
-            cur = [];
-            arr.push(cur);
-          }
-          cur.push({x: sx, y: sy});
-        } else {
-          draw = false;
-        }
-      } else {
-        draw = false;
-        sx = null;
-      }
     }
 
-    var h = new Hands({
-      locateFile: (file) => {
+    else if (fingerCount === 2) {
+        // Move only
+        prevX = x;
+        prevY = y;
+    }
+
+    else if (fingerCount === 3) {
+        // Eraser
+        ctx.clearRect(x - 20, y - 20, 40, 40);
+    }
+
+    else if (fingerCount === 5) {
+        // Clear screen
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    prevX = x;
+    prevY = y;
+}
+
+// MediaPipe Hands setup
+const hands = new Hands({
+    locateFile: (file) => {
         return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-      }
-    });
-    
-    h.setOptions({ 
-      maxNumHands: 1, 
-      modelComplexity: 1, 
-      minDetectionConfidence: 0.5, 
-      minTrackingConfidence: 0.5 
-    });
-    
-    h.onResults(run);
+    }
+});
 
-    var cam = new Camera(vid, {
-      onFrame: async () => { await h.send({image: vid}); },
-      width: 1280, 
-      height: 720
-    });
-    
-    cam.start();
-  </script>
+hands.setOptions({
+    maxNumHands: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+});
+
+hands.onResults(results => {
+    if (results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        let fingerCount = countFingers(landmarks);
+
+        let x = landmarks[8].x * canvas.width;
+        let y = landmarks[8].y * canvas.height;
+
+        handleGesture(fingerCount, x, y);
+    }
+});
+
+// Camera setup
+const camera = new Camera(video, {
+    onFrame: async () => {
+        await hands.send({ image: video });
+    },
+    width: 640,
+    height: 480
+});
+
+camera.start();
+</script>
+
 </body>
-
 </html>
